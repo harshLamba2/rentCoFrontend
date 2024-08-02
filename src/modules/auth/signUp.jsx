@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast, ToastContainer } from "react-toastify";
 import { initialUserSchema } from "../../utils/authSchemas.js";
+import axiosInterceptor from "../../utils/axiosInterceptor";
 
 export default function SignUp() {
   const navigate = useNavigate();
@@ -29,11 +30,6 @@ export default function SignUp() {
   const [gender, setGender] = useState("");
 
   const validateUserInfo = () => {
-    setScreen((prevCount) => prevCount + 1);
-    scrollDivToTop();
-    toast.success(`OTP has been sent to ${userEmail}`);
-    return;
-
     let initialUserObject = {
       userName,
       userEmail,
@@ -56,7 +52,7 @@ export default function SignUp() {
         delete validUser.month;
         delete validUser.year;
         const userBaseObject = { ...validUser, dateOfBirth };
-        console.log(userBaseObject);
+        sendVerificationCode(userBaseObject);
       })
       .catch((err) => {
         if (err.errors?.[0] ?? null) {
@@ -68,14 +64,48 @@ export default function SignUp() {
       });
   };
 
+  function sendVerificationCode(validatedObject) {
+    axiosInterceptor({
+      method: "post",
+      url: "/api/authentication/sendVerificationCode",
+      data: validatedObject,
+    })
+      .then((res) => {
+        setScreen((prevCount) => prevCount + 1);
+        scrollDivToTop();
+        return toast.success(`OTP has been sent to ${userEmail}`);
+      })
+      .catch((err) => {
+        toast.error(err.message);
+        setTimeout(() => {
+          navigate("/");
+        }, 2000);
+      });
+  }
+
   const [otp, setOtp] = useState("");
 
   const verifyOtp = () => {
     if (!otp.length) return toast.error(`Please enter OTP`);
-    if (otp.length < 6) return toast.error(`Please enter a valid OTP`);
+    if (otp.length < 6) return toast.error(`Incorrect OTP`);
 
-    setScreen((prevCount) => prevCount + 1);
-    toast.success(`OTP verification successfull`);
+    axiosInterceptor({
+      method: "post",
+      url: "/api/authentication/verifyUserEmail",
+      data: { userEmail, otp },
+    })
+      .then((res) => {
+        if (!res.success) return toast.error(res.message);
+        setScreen((prevCount) => prevCount + 1);
+        setOtp(res.data.otp);
+        return toast.success(`OTP verification successfull`);
+      })
+      .catch((err) => {
+        toast.error(err.message);
+        setTimeout(() => {
+          navigate("/");
+        }, 2000);
+      });
   };
 
   const [password, setPassword] = useState("");
@@ -95,7 +125,6 @@ export default function SignUp() {
 
   useEffect(() => {
     const weakPasswordRegex = /^(.{0,7}|([A-Za-z]+|\d+|[@$!%*?&]+))$/;
-    const mediumPasswordRegex = /^(?=.*[A-Za-z])(?=.*\d|.*[@$!%*?&])(?=.{8,})$/;
     const strongPasswordRegex =
       /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&~])[A-Za-z\d@$!%*?&~]{8,}$/;
 
@@ -153,10 +182,24 @@ export default function SignUp() {
     if (passStColor.text !== "strong" && passStColor.text !== "moderate")
       return toast.error(`Your password is weak`);
 
-    toast.success(`Authentication Successfull`);
-    setTimeout(() => {
-      navigate("/");
-    }, 2000);
+    axiosInterceptor({
+      method: "put",
+      url: "/api/authentication/setUserPassword",
+      data: { userEmail, otp, password, src: "set" },
+    })
+      .then((res) => {
+        toast.success(`Authentication Successfull `);
+        toast.success(`User ${userEmail} created`);
+        setTimeout(() => {
+          navigate("/");
+        }, 2000);
+      })
+      .catch((err) => {
+        toast.error(err.message);
+        setTimeout(() => {
+          navigate("/");
+        }, 2000);
+      });
   };
 
   return (
